@@ -234,6 +234,7 @@ pub fn build(b: *std.Build) void {
         "zig/addr_test.zig",
         "zig/loop.zig",
         "zig/transport.zig",
+        "zig/pending_test.zig",
     }) |test_root| {
         const tests = b.addTest(.{
             .root_module = b.createModule(.{
@@ -247,10 +248,13 @@ pub fn build(b: *std.Build) void {
         tests.root_module.addIncludePath(b.path("zig"));
         // `loop.zig` and `transport.zig` are test roots of their own, for the helpers
         // there that are private. They reach uv.zig's headers while being analysed,
-        // though nothing they test calls into libuv, so no library is linked. Zig runs
-        // the tests of every file a root imports, so `transport.zig` re-runs `loop.zig`'s
-        // five - cheaper than a shared root, which would stop each binary saying for
-        // itself what its module needs in order to link.
+        // though nothing they test calls into libuv, so no library is linked.
+        //
+        // Zig runs the tests of every file a root imports, so roots that import one another
+        // repeat each other's tests and the reported counts add up to more than there are
+        // tests. That is the price of a root per module, and worth paying: each binary links
+        // only what its own module needs, so a module that started reaching for the
+        // interpreter would fail here rather than quietly borrow another root's stand-in.
         tests.root_module.addIncludePath(b.path("vendor/libuv/include"));
         tests.root_module.addIncludePath(b.path("vendor/libuv/src"));
         test_step.dependOn(&b.addRunArtifact(tests).step);
