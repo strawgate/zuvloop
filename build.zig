@@ -214,26 +214,32 @@ pub fn build(b: *std.Build) void {
         b.fmt("_zuvloop{s}", .{ext_suffix}),
     ).step);
 
-    // The tests get a module of their own rather than sharing `mod`, because what
-    // they cover is the container arithmetic in `collections.zig`: that needs the
-    // Python headers for `PyObject` and nothing else - no libuv, and no
-    // interpreter to link against, since `zig/collections_test.zig` stands in for
-    // the one call the containers make into CPython.
+    // The tests get modules of their own rather than sharing `mod`, because what they
+    // cover is the parts of the Zig that are decidable without a loop: they need the
+    // Python headers for `PyObject` and nothing else - no libuv, and no interpreter to
+    // link against, because Zig analyses only what a root file reaches and these reach
+    // nothing that calls into CPython, bar the one release that
+    // `zig/collections_test.zig` stands in for.
     //
-    // Debug is pinned rather than taken from `-Doptimize`, because the safety
-    // checks are what make a failure here worth reading. With the ring mask
-    // deliberately broken, Debug reports `index out of bounds: index 64, len 64`
-    // and ReleaseFast reports `SIGSEGV`: both fail, but only one says why.
-    const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("zig/collections_test.zig"),
-            .target = target,
-            .optimize = .Debug,
-            .link_libc = true,
-        }),
-    });
-    tests.root_module.addIncludePath(.{ .cwd_relative = python_include });
-    tests.root_module.addIncludePath(b.path("zig"));
-
-    b.step("test", "Run the Zig unit tests").dependOn(&b.addRunArtifact(tests).step);
+    // One root per module rather than one shared root, so that the stand-in exports
+    // one of them needs cannot end up in another's binary.
+    //
+    // Debug is pinned rather than taken from `-Doptimize`, because the safety checks are
+    // what make a failure here worth reading. With the ring mask deliberately broken,
+    // Debug reports `index out of bounds: index 64, len 64` and ReleaseFast reports
+    // `SIGSEGV`: both fail, but only one says why.
+    const test_step = b.step("test", "Run the Zig unit tests");
+    for ([_][]const u8{ "zig/collections_test.zig", "zig/addr_test.zig" }) |test_root| {
+        const tests = b.addTest(.{
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(test_root),
+                .target = target,
+                .optimize = .Debug,
+                .link_libc = true,
+            }),
+        });
+        tests.root_module.addIncludePath(.{ .cwd_relative = python_include });
+        tests.root_module.addIncludePath(b.path("zig"));
+        test_step.dependOn(&b.addRunArtifact(tests).step);
+    }
 }
