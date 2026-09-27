@@ -229,7 +229,7 @@ pub fn build(b: *std.Build) void {
     // Debug reports `index out of bounds: index 64, len 64` and ReleaseFast reports
     // `SIGSEGV`: both fail, but only one says why.
     const test_step = b.step("test", "Run the Zig unit tests");
-    for ([_][]const u8{ "zig/collections_test.zig", "zig/addr_test.zig" }) |test_root| {
+    for ([_][]const u8{ "zig/collections_test.zig", "zig/addr_test.zig", "zig/loop.zig" }) |test_root| {
         const tests = b.addTest(.{
             .root_module = b.createModule(.{
                 .root_source_file = b.path(test_root),
@@ -240,6 +240,11 @@ pub fn build(b: *std.Build) void {
         });
         tests.root_module.addIncludePath(.{ .cwd_relative = python_include });
         tests.root_module.addIncludePath(b.path("zig"));
+        // `loop.zig` is its own test root, for the helpers there that are private. It
+        // reaches uv.zig's headers while being analysed, though nothing it tests calls
+        // into libuv, so no library is linked.
+        tests.root_module.addIncludePath(b.path("vendor/libuv/include"));
+        tests.root_module.addIncludePath(b.path("vendor/libuv/src"));
         test_step.dependOn(&b.addRunArtifact(tests).step);
     }
 }
